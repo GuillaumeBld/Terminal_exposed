@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Control dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin:0; background:#000; color:#fff; font-family:system-ui, sans-serif; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; padding:8px; }
+    .panel { background:#111; border:1px solid #333; border-radius:8px; padding:8px; }
+    #terminal { flex: 2 1 640px; min-height: 70vh; }
+    #metrics  { flex: 1 1 360px; min-height: 70vh; }
+    iframe { width:100%; height:100%; border:0; border-radius:6px; background:#000; }
+    h1 { padding:12px; }
+  </style>
+</head>
+<body>
+  <h1>Control dashboard</h1>
+  <div class="row">
+    <div id="terminal" class="panel">
+      <iframe src="https://cli.example.com"></iframe>
+    </div>
+    <div id="metrics" class="panel">
+      <!-- Replace UID and panelId after you import a Grafana dashboard -->
+      <iframe src="https://graf.example.com/d-solo/your_uid/overview?orgId=1&panelId=2&theme=dark"></iframe>
+    </div>
+  </div>
+</body>
+</html>

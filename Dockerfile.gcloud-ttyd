@@ -1,0 +1,33 @@
+FROM debian:bookworm-slim
+
+# non-root user
+RUN useradd -m -s /bin/bash cli
+
+# deps
+RUN apt-get update && apt-get install -y \
+    ca-certificates curl gnupg tini bash-coreutils procps less vim git \
+ && rm -rf /var/lib/apt/lists/*
+
+# install ttyd
+ARG TTYD_VER=1.7.4
+RUN curl -fsSL -o /usr/local/bin/ttyd \
+    https://github.com/tsl0922/ttyd/releases/download/${TTYD_VER}/ttyd.x86_64 \
+ && chmod +x /usr/local/bin/ttyd
+
+# install Google Cloud CLI
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
+      | tee /etc/apt/sources.list.d/google-cloud-sdk.list \
+ && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+      | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
+ && apt-get update && apt-get install -y google-cloud-cli \
+ && rm -rf /var/lib/apt/lists/*
+
+USER cli
+ENV HOME=/home/cli
+WORKDIR /home/cli
+
+# start a login shell with gcloud available
+ENV TTYD_PORT=7681
+EXPOSE 7681
+ENTRYPOINT ["/usr/bin/tini","--"]
+CMD ["sh","-lc","ttyd -p ${TTYD_PORT} -t disableLeaveAlert=true -t titleFixed=Google%20CLI%20on%20srv850639 bash"]

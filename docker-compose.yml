@@ -1,0 +1,116 @@
+version: "3.9"
+
+networks:
+  proxy:
+    external: true        # your existing Traefik network
+  infra:
+    internal: true
+
+services:
+  # Web terminal, runs a non-root shell with gcloud preinstalled
+  gcloud-ttyd:
+    build:
+      context: .
+      dockerfile: Dockerfile.gcloud-ttyd
+    container_name: gcloud-ttyd
+    restart: unless-stopped
+    networks: [proxy, infra]
+    environment:
+      - TZ=UTC
+      - TTYD_PORT=7681
+      - SHELL=/bin/bash
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.cli.rule=Host(`cli.example.com`)
+      - traefik.http.routers.cli.entrypoints=websecure
+      - traefik.http.routers.cli.tls=true
+      - traefik.http.routers.cli.middlewares=oauth@docker
+      - traefik.http.services.cli.loadbalancer.server.port=7681
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /home/cli/.cache
+    volumes:
+      - gcloud_home:/home/cli        # persist gcloud auth and configs
+
+  # OAuth2 gate in front of the terminal
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: oauth2-proxy
+    restart: unless-stopped
+    networks: [proxy]
+    environment:
+      - OAUTH2_PROXY_PROVIDER=google
+      - OAUTH2_PROXY_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - OAUTH2_PROXY_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OAUTH2_PROXY_COOKIE_SECRET=${COOKIE_SECRET_32B}
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_UPSTREAMS=file:///dev/null
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.oauth.forwardauth.address=http://oauth2-proxy:4180/oauth2/auth
+      - traefik.http.middlewares.oauth.forwardauth.trustForwardHeader=true
+      - traefik.http.middlewares.oauth.forwardauth.authResponseHeaders=X-Auth-Request-Email
+
+  # Metrics stack
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    networks: [infra]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    restart: unless-stopped
+    networks: [infra]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    networks: [proxy, infra]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PW}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.graf.rule=Host(`graf.example.com`)
+      - traefik.http.routers.graf.entrypoints=websecure
+      - traefik.http.routers.graf.tls=true
+      - traefik.http.routers.graf.middlewares=oauth@docker
+      - traefik.http.services.graf.loadbalancer.server.port=3000
+
+  # Control dashboard page that embeds both
+  control-dashboard:
+    image: nginx:stable-alpine
+    container_name: control-dashboard
+    restart: unless-stopped
+    networks: [proxy]
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ctrl.rule=Host(`dashboard.example.com`)
+      - traefik.http.routers.ctrl.entrypoints=websecure
+      - traefik.http.routers.ctrl.tls=true
+      - traefik.http.routers.ctrl.middlewares=oauth@docker
+      - traefik.http.services.ctrl.loadbalancer.server.port=80
+
+volumes:
+  gcloud_home:
